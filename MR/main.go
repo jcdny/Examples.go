@@ -31,14 +31,10 @@ func main() {
 		usage()
 	}
 
-	files, mapper, results := NewDispatch()
+	results := Process(args)
 
-	go Stage(files, mapper, MaxStage)
-	go Mapper(mapper, results)
-	Walk(args, files)
-
-	rset := <-results
-	for _, r := range rset {
+	for _, r := range results {
 		log.Print(r)
 	}
+
 }

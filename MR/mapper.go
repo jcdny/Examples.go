@@ -25,21 +25,25 @@ type Job struct {
 }
 
 var (
-	ST        = int64(5000000)
-	MaxJobs   = 1000
-	MaxStage  = 10
-	MaxReduce = 2
+	MaxJobs   = 1000 // Maximum # of files queued to process
+	NStage    = 10   // # of simultaneous staging goroutines
+	MaxMapper = 10   // Max # of jobs pending for the mapper
+	MaxReduce = 1    // Max # of jobs pending per reducer
 )
 
-func (r *Result) String() string {
-	return fmt.Sprintf("Files starting with %s: %d files %d bytes",
-		r.Key, r.N, r.NBytes)
-}
-func NewDispatch() (files chan *Job, mapper chan *Job, results chan []*Result) {
-	files = make(chan *Job, MaxJobs)
-	mapper = make(chan *Job, MaxReduce)
-	results = make(chan []*Result)
-	return
+// Take the list of files, set up the channels to connect the 
+// stages of the processing, and then block until reading 
+// final results.
+func Process(files []string) []*Result {
+	stage := make(chan *Job, MaxJobs)
+	mapper := make(chan *Job, MaxMapper)
+	results := make(chan []*Result)
+
+	go Mapper(mapper, results)
+	go Stage(stage, mapper, NStage)
+	Walk(files, stage)
+
+	return <-results
 }
 
 // Given a slice of filenames, walk the tree and generate the Job
@@ -73,7 +77,7 @@ func Stage(in <-chan *Job, out chan<- *Job, N int) {
 	ring := make(chan chan *Job, N)
 
 	// Create the stager goroutines
-	for i := 0; i < MaxStage; i++ {
+	for i := 0; i < NStage; i++ {
 		in := make(chan *Job)
 		go stager(in, out, ring, done)
 		ring <- in
@@ -136,6 +140,9 @@ func Mapper(in <-chan *Job, out chan<- []*Result) {
 		close(r)
 	}
 
+	// We closed all the reducers, loop here until we have read all
+	// their result data then return it via the out channel which was
+	// passed in.
 	results := make([]*Result, 0, len(reducers))
 	for _, _ = range reducers {
 		results = append(results, <-rout)
@@ -156,4 +163,9 @@ func reducer(key string, in <-chan *Job, out chan<- *Result) {
 	}
 
 	out <- &res
+}
+
+func (r *Result) String() string {
+	return fmt.Sprintf("Files starting with %s: %d files %d bytes",
+		r.Key, r.N, r.NBytes)
 }
