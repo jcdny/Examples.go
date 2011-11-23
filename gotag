@@ -1,0 +1,5 @@
+#!/bin/sh
+
+# get the aolserver module tags
+etags --lang=none \
+      --regex='/func[ \t]*\(([^)]+)[ ]+\)*[ ]*\([^(]*\)/\2/' `find . -name *.go -a ! -name _*`
